@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Taguchi Optimizer | DOE Lab</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="{{ url_for('static', filename='style.css') }}" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container"><a class="navbar-brand fw-bold" href="/">Dr. M. Raja Roy - TAGUCHI<span>LAB</span></a><span class="navbar-text">Design of Experiments · Optimization</span></div>
+</nav>
+<header class="hero">
+  <div class="container py-5">
+    <div class="eyebrow">ENGINEERING STATISTICS / DOE</div>
+    <h1>Find the <em>optimal factors.</em></h1>
+    <p class="lead">Configure factor levels, paste your experimental runs, choose the response objective, and calculate S/N ratios, ANOVA, main effects and predicted optimum.</p>
+    <div class="hero-pills"><span>Signal-to-noise ratio</span><span>ANOVA</span><span>Main effects</span><span>Prediction</span></div>
+  </div>
+</header>
+<main class="container py-4 py-lg-5">
+  <div class="section-heading"><div><div class="eyebrow">01 / INPUT WORKSPACE</div><h2>Experiment setup</h2></div><div class="hint">CSV columns must match factor names exactly.</div></div>
+  {% if error %}<div class="alert alert-danger"><strong>Unable to analyze:</strong> {{ error }}</div>{% endif %}
+  <form method="post" id="analysisForm">
+    <div class="row g-4">
+      <div class="col-12 col-lg-5">
+        <div class="panel h-100">
+          <h3><span class="step">A</span> Factor configuration</h3>
+          <label class="form-label" for="factor_config">One factor per line: <code>Factor name | level1, level2, level3</code></label>
+          <textarea class="form-control code-area" rows="7" name="factor_config" id="factor_config" required>{{ factor_config }}</textarea>
+          <div class="form-text">Use the same level labels in the DOE table. Numeric or text labels are supported.</div>
+          <hr>
+          <label class="form-label" for="response_name">Response column name</label>
+          <input class="form-control" name="response_name" id="response_name" value="{{ response_name }}" required>
+          <label class="form-label mt-3">Optimization objective</label>
+          <div class="objective-grid">
+            <label class="objective-card {% if condition == 'minimum' %}selected{% endif %}"><input type="radio" name="condition" value="minimum" {% if condition == 'minimum' %}checked{% endif %}><span class="objective-icon">↓</span><strong>Minimum</strong><small>Smaller-the-better S/N</small></label>
+            <label class="objective-card {% if condition == 'maximum' %}selected{% endif %}"><input type="radio" name="condition" value="maximum" {% if condition == 'maximum' %}checked{% endif %}><span class="objective-icon">↑</span><strong>Maximum</strong><small>Larger-the-better S/N</small></label>
+          </div>
+          <div class="small-note mt-3">S/N formulas assume positive, non-zero response values. Minimum is appropriate for wear, mass loss, error and defects; maximum for strength, yield and efficiency.</div>
+        </div>
+      </div>
+      <div class="col-12 col-lg-7">
+        <div class="panel">
+          <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+            <h3><span class="step">B</span> Design of experiments table</h3>
+            <button type="button" class="btn btn-sm btn-outline-light" id="resetDemo">Load paper data</button>
+          </div>
+          <p class="text-secondary small">Paste or edit CSV. Include one column for every factor and one response column.</p>
+          <textarea class="form-control code-area doe-area" rows="17" name="doe_csv" id="doe_csv" spellcheck="false" required>{{ doe_csv }}</textarea>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <button class="btn btn-primary btn-lg" type="submit"><span class="me-2">↗</span> Run Taguchi analysis</button>
+            <button class="btn btn-outline-secondary btn-lg" type="button" id="downloadCsv">Download current CSV</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+
+{% if result %}
+  <section class="results" id="results">
+    <div class="section-heading mt-5"><div><div class="eyebrow">02 / ANALYSIS RESULTS</div><h2>Optimization summary</h2></div><span class="status-chip">Analysis complete · {{ result.n }} runs</span></div>
+    <div class="metric-grid">
+      <div class="metric"><span>Predicted optimum S/N</span><strong>{{ "%.4f"|format(result.predicted_sn) }} <small>dB</small></strong><p>Additive Taguchi model</p></div>
+      <div class="metric"><span>Predicted response*</span><strong>{{ "%.7g"|format(result.predicted_response) }}</strong><p>{{ result.response_name }}</p></div>
+      <div class="metric"><span>Overall S/N mean</span><strong>{{ "%.4f"|format(result.grand_mean) }} <small>dB</small></strong><p>Across all experimental runs</p></div>
+      <div class="metric"><span>Objective</span><strong>{{ result.condition.title() }}</strong><p>{% if result.condition == 'minimum' %}Lower-the-better{% else %}Higher-the-better{% endif %}</p></div>
+    </div>
+    <div class="panel mt-4">
+      <h3><span class="step">C</span> Recommended factor levels</h3>
+      <div class="table-responsive"><table class="table align-middle result-table"><thead><tr><th>Factor</th><th>Optimal level</th><th>Mean S/N at selected level (dB)</th></tr></thead><tbody>
+      {% for item in result.optimum %}<tr><td class="fw-semibold">{{ item.factor }}</td><td><span class="level-badge">{{ item.level }}</span></td><td>{{ "%.4f"|format(item.mean_sn) }}</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="small-note">Select the level with the highest mean S/N for both objective types; the S/N definition changes with the objective.</div>
+    </div>
+    <div class="panel mt-4">
+      <h3><span class="step">D</span> Analysis of variance (ANOVA)</h3>
+      <p class="text-secondary small">ANOVA is performed on the calculated S/N ratios. Contributions are based on sequential factor sums of squares.</p>
+      <div class="table-responsive"><table class="table result-table"><thead><tr><th>Source</th><th>DF</th><th>Seq SS</th><th>Adj MS</th><th>F</th><th>P-value</th><th>Contribution %</th></tr></thead><tbody>
+      {% for r in result.anova %}<tr><td class="fw-semibold">{{ r.source }}</td><td>{{ r.df }}</td><td>{{ "%.5g"|format(r.ss) }}</td><td>{% if r.ms is not none and r.ms == r.ms %}{{ "%.5g"|format(r.ms) }}{% else %}—{% endif %}</td><td>{% if r.f is not none and r.f == r.f %}{{ "%.4g"|format(r.f) }}{% else %}—{% endif %}</td><td>{% if r.p is not none and r.p == r.p %}{{ "%.4g"|format(r.p) }}{% else %}—{% endif %}</td><td>{{ "%.2f"|format(r.contribution) }}%</td></tr>{% endfor %}
+      </tbody></table></div>
+      <div class="small-note">A p-value is not available when the design leaves no residual degrees of freedom or residual mean square is zero. Interpret ANOVA in light of replication, model assumptions and the experimental design.</div>
+    </div>
+    <div class="panel mt-4">
+      <h3><span class="step">E</span> Main effects plot</h3>
+      <p class="text-secondary small">Each point is the mean S/N ratio at that factor level. The selected optimum is the level with the highest mean S/N.</p>
+      <img class="plot-image" src="data:image/png;base64,{{ result.plot }}" alt="Main effects plot of mean signal-to-noise ratio by factor level">
+    </div>
+    <div class="panel mt-4">
+      <h3><span class="step">F</span> Run-wise S/N and additive predictions</h3>
+      <div class="table-responsive">{{ result.table_html|safe }}</div>
+      <div class="small-note mt-3">*Predicted response is obtained by inverting the predicted S/N as a single-observation equivalent. It is an estimate, not a substitute for a confirmation experiment. Each DOE row is treated as one response observation. To analyze repeated measurements, first calculate the appropriate run-level S/N ratio or extend the input format to represent replicates explicitly.</div>
+      <button class="btn btn-outline-light mt-3" type="button" onclick="window.print()">Print / Save results as PDF</button>
+    </div>
+  </section>
+{% endif %}
+<footer class="footer mt-5"><div>Dr. M. RajaRoy : TAGUCHILAB <span>·</span> Flask DOE Workbench</div><small>Educational analysis tool. Verify model assumptions and validate optimum settings experimentally.</small></footer>
+</main>
+<script>
+const paperFactors = {{ [
+"Load (N) | 10, 30, 40, 50",
+"Speed (m/s) | 0.6, 0.9, 1.2, 1.5",
+"Distance (km) | 0.25, 0.5, 0.75, 1"
+]|tojson }};
+const paperCsv = {{ [
+"Load (N),Speed (m/s),Distance (km),Mass loss (g)",
+"10,0.6,0.25,0.003041367",
+"10,0.9,0.5,0.006429936",
+"10,1.2,0.75,0.019119821",
+"10,1.5,1,0.054649643",
+"30,0.6,0.5,0.089785191",
+"30,0.9,0.25,0.117041974",
+"30,1.2,1,0.166156451",
+"30,1.5,0.75,0.180918178",
+"40,0.6,0.75,0.215269354",
+"40,0.9,1,0.227123522",
+"40,1.2,0.25,0.26218299",
+"40,1.5,0.5,0.292906082",
+"50,0.6,1,0.306220215",
+"50,0.9,0.75,0.304216223",
+"50,1.2,0.5,0.297652719",
+"50,1.5,0.25,0.30806682"
+] | join("\n") | tojson }};
+document.getElementById('resetDemo').addEventListener('click', () => {
+  document.getElementById('factor_config').value = paperFactors.join("\n");
+  document.getElementById('response_name').value = "Mass loss (g)";
+  document.querySelector('input[name="condition"][value="minimum"]').checked = true;
+  document.getElementById('doe_csv').value = paperCsv;
+});
+document.getElementById('downloadCsv').addEventListener('click', () => {
+  const blob = new Blob([document.getElementById('doe_csv').value], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = 'taguchi_doe.csv'; a.click(); URL.revokeObjectURL(url);
+});
+document.querySelectorAll('.objective-card input').forEach(el => el.addEventListener('change', () => {
+  document.querySelectorAll('.objective-card').forEach(card => card.classList.remove('selected'));
+  el.closest('.objective-card').classList.add('selected');
+}));
+</script>
+</body></html>

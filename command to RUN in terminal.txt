@@ -1,0 +1,20 @@
+1. Create and Navigate to Your Project Directory
+mkdir my_flask_app
+cd my_flask_app
+
+
+2. Create the Virtual Environment
+Run the following command to generate the virtual environment folder. Most developers name this folder .venv or venv
+python -m venv .venv
+
+
+3. Activate the Environment
+You must activate the virtual environment before installing packages. The command varies depending on your Operating System.
+.venv\Scripts\activate.bat
+
+4. Install the required Python packages
+pip install -r requirements.txt
+
+5. Start the application:
+python app.py
+
